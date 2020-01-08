@@ -48,6 +48,7 @@ build_libzmq() {
 
     pushd $OUTPUT_DIR/libzmq-ios
     pwd
+    git apply ../../libzmq.rb.patch
     ./libzmq.rb
     popd
 
