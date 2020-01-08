@@ -4,13 +4,10 @@
 
 source ./env.sh
 
+INDY_VERSION="v1.13.0"
 OUTPUT_DIR=./output
-INDY_SDK_DIR=./indy-sdk
+INDY_SDK_DIR=$OUTPUT_DIR/indy-sdk
 VCX_DIR=${INDY_SDK_DIR}/vcx
-
-# Clone indy-sdk?
-# Checkout required version
-# Build libindy
 
 # Build libssl and libcrypto
 build_crypto() {
@@ -74,6 +71,7 @@ extract_architectures() {
         lipo ${ARCH}/$LIB_NAME-fat.a -thin $ARCH -output ${ARCH}/$LIB_NAME.a
         rm ${ARCH}/$LIB_NAME-fat.a
     done
+
     popd
 
     # Check tmp/arm64/$LIB_NAME.a is non-fat file with arm64 architecture
@@ -84,11 +82,27 @@ extract_architectures() {
     # Non-fat file: tmp/arm64/libzmq.a is architecture: arm64
 }
 
-# Build vcx
+checkout_indy_sdk() {
+    if [ ! -d $INDY_SDK_DIR ]; then
+        git clone https://github.com/hyperledger/indy-sdk $INDY_SDK_DIR
+    fi
 
-# Copy libraries to combine
-# Combine libs by arch
-# Merge libs to single fat binary
+    pushd $INDY_SDK_DIR
+    git fetch --all
+    git checkout $INDY_VERSION
+    popd
+}
+
+build_libindy() {
+    # OpenSSL-for-iPhone currently provides libs only for aarch64-apple-ios and x86_64-apple-ios, so we select only them.
+    TRIPLETS="aarch64-apple-ios,x86_64-apple-ios"
+
+    pushd $INDY_SDK_DIR/libindy
+    cargo lipo --release --targets="${TRIPLETS}"
+    popd
+
+    # Check there is a fat file $INDY_SDK_DIR/libindy/target/universal/release/libindy.a
+}
 
 # build_crypto
 # build_libsodium
@@ -96,3 +110,16 @@ extract_architectures() {
 
 # extract_architectures LIB_PATH LIB_NAME
 # extract_architectures output/libzmq-ios/dist/ios/lib/libzmq.a libzmq
+
+# Build libindy
+# Clone indy-sdk?
+# Checkout required version
+
+# checkout_indy_sdk
+# build_libindy
+
+# Build vcx
+
+# Copy libraries to combine
+# Combine libs by arch
+# Merge libs to single fat binary
