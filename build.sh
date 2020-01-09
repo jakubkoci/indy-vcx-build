@@ -13,13 +13,16 @@ build_crypto() {
     if [ ! -d $OUTPUT_DIR/OpenSSL-for-iPhone ]; then
         git clone https://github.com/x2on/OpenSSL-for-iPhone.git $OUTPUT_DIR/OpenSSL-for-iPhone
     fi
+
     pushd $OUTPUT_DIR/OpenSSL-for-iPhone
-    pwd
     ./build-libssl.sh --version=$OPENSSL_VERSION
     popd
 
-    # Check there is a fat file output/OpenSSL-for-iPhone/lib/libssl.a
-    # Check there is a fat file output/OpenSSL-for-iPhone/lib/libcrypto.a
+    # Check there is a fat file libssl.a
+    lipo -info $OUTPUT_DIR/OpenSSL-for-iPhone/lib/libssl.a
+
+    # Check there is a fat file libcrypto.a
+    lipo -info $OUTPUT_DIR/OpenSSL-for-iPhone/lib/libcrypto.a
 }
 
 # Build libsodium
@@ -29,11 +32,11 @@ build_libsodium() {
     fi
 
     pushd $OUTPUT_DIR/libsodium-ios
-    pwd
     ./libsodium.rb
     popd
 
-    # Check there is a fat file output/libsodium-ios/dist/ios/lib/libsodium.a
+    # Check there is a fat file libsodium.a
+    lipo -info $OUTPUT_DIR/libsodium-ios/dist/ios/lib/libsodium.a
 }
 
 # Build libzmq
@@ -43,12 +46,12 @@ build_libzmq() {
     fi
 
     pushd $OUTPUT_DIR/libzmq-ios
-    pwd
     git apply ../../libzmq.rb.patch
     ./libzmq.rb
     popd
 
-    # Check there is a fat file output/libzmq-ios/dist/ios/lib/libzmq.a
+    # Check there is a fat file libzmq.a
+    lipo -info $OUTPUT_DIR/libzmq-ios/dist/ios/lib/libzmq.a
 }
 
 extract_architectures() {
@@ -393,4 +396,4 @@ abspath() {
 
 # Build vcx.framework
 # apply_vcx_wrapper_ios_patch
-build_vcx_framework libvcxall
+# build_vcx_framework libvcxall
