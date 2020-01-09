@@ -267,6 +267,66 @@ combine_libs() {
     lipo -info $OUTPUT_DIR/${COMBINED_LIB}.a
 }
 
+build_vcx_framework() {
+    COMBINED_LIB=$1
+    DATETIME=$(date +"%Y%m%d.%H%M")
+    ARCHS="arm64 x86_64"
+
+    cp -v $OUTPUT_DIR/${COMBINED_LIB}.a $INDY_SDK_DIR/vcx/wrappers/ios/vcx/lib/libvcx.a
+
+    pushd $INDY_SDK_DIR/vcx/wrappers/ios/vcx
+    rm -rf vcx.framework.previousbuild
+
+    for ARCH in ${ARCHS[*]}; do
+        echo $ARCH
+
+        rm -rf vcx.framework
+        if [ "${ARCH}" = "i386" ] || [ "${ARCH}" = "x86_64" ]; then
+            # This sdk supports i386 and x86_64
+            IPHONE_SDK=iphonesimulator
+        elif [ "${ARCH}" = "armv7" ] || [ "${ARCH}" = "armv7s" ] || [ "${ARCH}" = "arm64" ]; then
+            # This sdk supports armv7, armv7s, and arm64
+            IPHONE_SDK=iphoneos
+        else
+            echo "Missing IPHONE_SDK value!"
+            exit 1
+        fi
+
+        xcodebuild -project vcx.xcodeproj -scheme vcx -configuration Debug -arch ${ARCH} -sdk ${IPHONE_SDK} CONFIGURATION_BUILD_DIR=. build
+
+        if [ -d "./vcx.framework.previousbuild" ]; then
+            lipo -create -output combined.ios.vcx vcx.framework/vcx vcx.framework.previousbuild/vcx
+            mv combined.ios.vcx vcx.framework/vcx
+            rm -rf vcx.framework.previousbuild
+        fi
+        cp -rp vcx.framework vcx.framework.previousbuild
+    done
+
+    rm lib/libvcx.a
+    rm -rf vcx.framework.previousbuild
+    mkdir -p vcx.framework/Headers
+    cp -v ConnectMeVcx.h vcx.framework/Headers
+    cp -v include/libvcx.h vcx.framework/Headers
+    cp -v vcx/vcx.h vcx.framework/Headers
+    if [ -d tmp ]; then
+        rm -rf tmp
+    fi
+    mkdir -p tmp/vcx/
+    cp -rvp vcx.framework tmp/vcx/
+    cd tmp
+
+    zip -r vcx.${COMBINED_LIB}_${DATETIME}_universal.zip vcx
+    popd
+
+    cp $INDY_SDK_DIR/vcx/wrappers/ios/vcx/tmp/vcx.${COMBINED_LIB}_${DATETIME}_universal.zip $OUTPUT_DIR/
+}
+
+apply_vcx_wrapper_ios_patch() {
+    pushd $INDY_SDK_DIR
+    git apply ../../vcx-wrapper-ios.patch
+    popd
+}
+
 generate_flags() {
     if [ -z $1 ]; then
         echo "please provide the arch e.g. arm64 or x86_64"
@@ -326,9 +386,11 @@ abspath() {
 # copy_libvcx_architectures
 
 # Copy libraries to combine
-copy_libs_tocombine
+# copy_libs_tocombine
 
 # Combine libs by arch and merge libs to single fat binary
-combine_libs libvcxall
+# combine_libs libvcxall
 
 # Build vcx.framework
+# apply_vcx_wrapper_ios_patch
+build_vcx_framework libvcxall

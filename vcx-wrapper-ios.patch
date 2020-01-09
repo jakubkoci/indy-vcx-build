@@ -1,0 +1,135 @@
+diff --git a/vcx/wrappers/ios/vcx/ConnectMeVcx.h b/vcx/wrappers/ios/vcx/ConnectMeVcx.h
+index 500edb24e..82b388c5f 100644
+--- a/vcx/wrappers/ios/vcx/ConnectMeVcx.h
++++ b/vcx/wrappers/ios/vcx/ConnectMeVcx.h
+@@ -98,6 +98,11 @@ extern void VcxWrapperCommonNumberStringCallback(vcx_command_handle_t xcommand_h
+ - (void)deleteConnection:(VcxHandle)connectionHandle
+           withCompletion:(void (^)(NSError *error))completion;
+ 
++- (void)connectionSendMessage:(VcxHandle)connectionHandle
++                  withMessage:(NSString *)message
++       withSendMessageOptions:(NSString *)sendMessageOptions
++               withCompletion:(void (^)(NSError *error, NSString *msg_id))completion;
++
+ - (void)connectionSignData:(VcxHandle)connectionHandle
+                    data:(NSData *)data
+                 completion:(void (^)(NSError *, NSData *signature))completion;
+diff --git a/vcx/wrappers/ios/vcx/ConnectMeVcx.m b/vcx/wrappers/ios/vcx/ConnectMeVcx.m
+index bfc1f4866..0b325cc1b 100644
+--- a/vcx/wrappers/ios/vcx/ConnectMeVcx.m
++++ b/vcx/wrappers/ios/vcx/ConnectMeVcx.m
+@@ -436,6 +436,28 @@ - (void)deleteConnection:(VcxHandle)connectionHandle
+     }
+ }
+ 
++- (void)connectionSendMessage:(VcxHandle)connectionHandle
++                  withMessage:(NSString *)message
++       withSendMessageOptions:(NSString *)sendMessageOptions
++               withCompletion:(void (^)(NSError *error, NSString *msg_id))completion
++{
++    vcx_command_handle_t handle= [[VcxCallbacks sharedInstance] createCommandHandleFor:completion];
++    const char *message_ctype = [message cStringUsingEncoding:NSUTF8StringEncoding];
++    const char *sendMessageOptions_ctype = [sendMessageOptions cStringUsingEncoding:NSUTF8StringEncoding];
++    vcx_error_t ret = vcx_connection_send_message(handle,
++                                                  connectionHandle,
++                                                  message_ctype,
++                                                  sendMessageOptions_ctype,
++                                                  VcxWrapperCommonStringCallback);
++    if (ret != 0)
++    {
++        [[VcxCallbacks sharedInstance] deleteCommandHandleFor:handle];
++        dispatch_async(dispatch_get_main_queue(), ^{
++            completion([NSError errorFromVcxError: ret], nil);
++        });
++    }
++}
++
+ - (void)connectionSignData:(VcxHandle)connectionHandle
+                    data:(NSData *)data
+                 completion:(void (^)(NSError *, NSData *signature))completion
+diff --git a/vcx/wrappers/ios/vcx/include/libvcx.h b/vcx/wrappers/ios/vcx/include/libvcx.h
+index 8c7b0d5ff..f086f5906 100644
+--- a/vcx/wrappers/ios/vcx/include/libvcx.h
++++ b/vcx/wrappers/ios/vcx/include/libvcx.h
+@@ -69,6 +69,8 @@ vcx_error_t vcx_update_agent_info(vcx_command_handle_t handle, const char *info,
+ const char *vcx_error_c_message(int);
+ const char *vcx_version();
+ 
++vcx_error_t vcx_get_current_error(const char ** error_json_p);
++
+ /**
+  * Schema object
+  *
+@@ -149,6 +151,35 @@ vcx_error_t vcx_connection_create_with_invite(vcx_command_handle_t command_handl
+ /** Deletes a connection, send an API call to agency to stop sending messages from this connection */
+ vcx_error_t vcx_connection_delete_connection(vcx_command_handle_t command_handle, vcx_connection_handle_t connection_handle, void (*cb)(vcx_command_handle_t, vcx_error_t err));
+ 
++/** Send a message to the specified connection
++///
++/// #params
++///
++/// command_handle: command handle to map callback to user context.
++///
++/// connection_handle: connection to receive the message
++///
++/// msg: actual message to send
++///
++/// send_message_options: config options json string that contains following options
++///     {
++///         msg_type: String, // type of message to send
++///         msg_title: String, // message title (user notification)
++///         ref_msg_id: Option<String>, // If responding to a message, id of the message
++///     }
++///
++///
++/// cb: Callback that provides array of matching messages retrieved
++///
++/// #Returns
++/// Error code as a u32
++ */
++vcx_error_t vcx_connection_send_message(vcx_command_handle_t command_handle,
++                                        vcx_connection_handle_t connection_handle,
++                                        const char *msg,
++                                        const char *send_message_options,
++                                        void (*cb)(vcx_command_handle_t xcommand_handle, vcx_error_t err, const char *msg_id));
++
+ /** Generate a signature for the specified data */
+ vcx_error_t vcx_connection_sign_data(vcx_command_handle_t command_handle, vcx_connection_handle_t connection_handle, uint8_t const* data_raw, unsigned int data_len, void (*cb)(vcx_command_handle_t, vcx_error_t err, uint8_t const* signature_raw, unsigned int signature_len));
+ 
+diff --git a/vcx/wrappers/ios/vcx/utils/NSError+VcxError.m b/vcx/wrappers/ios/vcx/utils/NSError+VcxError.m
+index 9c41e81da..2a88f0f13 100644
+--- a/vcx/wrappers/ios/vcx/utils/NSError+VcxError.m
++++ b/vcx/wrappers/ios/vcx/utils/NSError+VcxError.m
+@@ -15,11 +15,14 @@ + (NSError*) errorFromVcxError:(vcx_error_t) error
+ {
+     NSMutableDictionary *userInfo = [NSMutableDictionary new];
+ 
+-    if (error != Success) {
++    if (error != 0) {
+         const char * error_json_p;
+             vcx_get_current_error(&error_json_p);
+ 
+-            NSString *errorDetailsJson = [NSString stringWithUTF8String:error_json_p];
++            NSString *errorDetailsJson = nil;
++            if (error_json_p) {
++                errorDetailsJson = [NSString stringWithUTF8String:error_json_p];
++            }
+ 
+             NSError *error;
+             NSDictionary *errorDetails = [NSJSONSerialization JSONObjectWithData:[NSData dataWithBytes:[errorDetailsJson UTF8String]
+@@ -27,7 +30,7 @@ + (NSError*) errorFromVcxError:(vcx_error_t) error
+                                                                                             options:kNilOptions
+                                                                                             error: &error];
+ 
+-           [userInfo setValue:errorDetails[@"error"] forKey:@"sdk_message"];
++            [userInfo setValue:errorDetails[@"error"] forKey:@"sdk_message"];
+             [userInfo setValue:errorDetails[@"message"] forKey:@"sdk_full_message"];
+             [userInfo setValue:errorDetails[@"cause"] forKey:@"sdk_cause"];
+             [userInfo setValue:errorDetails[@"backtrace"] forKey:@"sdk_backtrace"];
+@@ -36,4 +39,4 @@ + (NSError*) errorFromVcxError:(vcx_error_t) error
+     return [NSError errorWithDomain:VcxErrorDomain code: error userInfo:userInfo];
+ }
+ 
+-@end
++@end
+\ No newline at end of file
